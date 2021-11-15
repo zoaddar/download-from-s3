@@ -1,0 +1,7 @@
+/.idea
+/.vscode
+/.vagrant
+*.DS_Store
+composer.lock
+vendor/
+temp/

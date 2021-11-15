@@ -1,0 +1,9 @@
+{
+    "require": {
+        "php": ">=7.1.3",
+        "aws/aws-sdk-php": "^3.193"
+    },
+    "require-dev": {
+        "symfony/phpunit-bridge": "^5.0"
+    }
+}
