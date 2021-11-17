@@ -1,9 +1,10 @@
 <?php
 use Aws\S3\Exception\S3Exception;
 
-class Download_csv{
+class Download{
 	private $s3_client;
 	public $s3_bucket;
+	public $file_version = false;
 	public $s3_folder  = "";
 	public $start_date = "";
 	public $end_date   = "";
@@ -18,16 +19,23 @@ class Download_csv{
 			$fileList = $this->getFileList();
 
 			if(count($fileList) > 0){
-				foreach($fileList as $file){
-					$finfo = explode('/', $file);
-					$filename = $finfo[count($finfo)-1];
-					$save_to = rtrim($this->save_to.'/'.str_replace($filename,'',$file), '/');
+				foreach($fileList as $fileInfo){
+					$filename = $fileInfo['basename'];
+					$savepath = $this->save_to .'/'. $fileInfo['dirname'];
 
-					$result = $this->s3_client->getObject(array(
+					$objectData = [
 						'Bucket' => $this->s3_bucket,
-						'Key'    => $file,
-					));
-					$this->save_file($result['Body'], $save_to, $filename);
+						'Key'    => $fileInfo['dirname'] .'/'. $filename,
+					];
+
+					if(isset($fileInfo['version'])){
+						$objectData['VersionId'] = $fileInfo['version'];
+						$filename = $fileInfo['filename'] .'_'. $fileInfo['version'] .'.'. $fileInfo['extension'];
+					}
+
+					$result = $this->s3_client->getObject($objectData);
+
+					$this->save_file($result['Body'], $savepath, $filename);
 				}
 			}
 		} catch (S3Exception $e) {
@@ -36,24 +44,52 @@ class Download_csv{
 	}
 
 	private function getFileList(){
-		$objects =  $this->s3_client->getPaginator('ListObjects', [
-			'Bucket' => $this->s3_bucket,
-			'Prefix' => $this->s3_folder
-		]);
-
 		$fileList = [];
-		foreach($objects as $result){
-			if(isset($result['Contents'])){
-				foreach($result['Contents'] as $object){
+
+		if($this->file_version){
+			$objects = $this->s3_client->listObjectVersions([
+				'Bucket' => $this->s3_bucket,
+				'Prefix' => $this->s3_folder
+			]);
+
+			if(isset($objects['Versions'])){
+				foreach($objects['Versions'] as $key => $object){
+					$fileKey  = $object['Key'];
+					$fileVer  = $object['VersionId'];
+					$fileInfo = pathinfo($fileKey);
+					$fileInfo['version'] = $fileVer;
+
 					$cdate = strtotime($object['LastModified']->format(\DateTime::ISO8601));
 					$sdate = $this->start_date != "" ? strtotime($this->start_date) : 0;
 					$edate = $this->end_date != "" ? strtotime($this->end_date.' 23:59:59') : 0;
 
 					if($cdate >= $sdate && $cdate <= $edate){
-						$fileList[] = $object['Key'];
+						$fileList[] = $fileInfo;
 					}
 					if($sdate == 0 && $edate == 0){
-						$fileList[] = $object['Key'];
+						$fileList[] = $fileInfo;
+					}
+				}
+			}
+		} else{
+			$objects =  $this->s3_client->getPaginator('ListObjects', [
+				'Bucket' => $this->s3_bucket,
+				'Prefix' => $this->s3_folder
+			]);
+
+			foreach($objects as $result){
+				if(isset($result['Contents'])){
+					foreach($result['Contents'] as $object){
+						$cdate = strtotime($object['LastModified']->format(\DateTime::ISO8601));
+						$sdate = $this->start_date != "" ? strtotime($this->start_date) : 0;
+						$edate = $this->end_date != "" ? strtotime($this->end_date.' 23:59:59') : 0;
+
+						if($cdate >= $sdate && $cdate <= $edate){
+							$fileList[] = pathinfo($object['Key']);
+						}
+						if($sdate == 0 && $edate == 0){
+							$fileList[] = pathinfo($object['Key']);
+						}
 					}
 				}
 			}
